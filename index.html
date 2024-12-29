@@ -11,28 +11,75 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- เพิ่ม Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- เพิ่ม Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
 <body class="bg-gray-100">
     <div id="root"></div>
 
     <script type="text/babel">
+        // ตั้งค่า Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBRaU1HH72Rv_3xcK8IqknGRfrAHBv2vrs",
+            authDomain: "enamon-41731.firebaseapp.com",
+            databaseURL: "https://enamon-41731-default-rtdb.asia-southeast1.firebasedatabase.app/",
+            projectId: "enamon-41731",
+            storageBucket: "enamon-41731.firebasestorage.app",
+            messagingSenderId: "385149976284",
+            appId: "1:385149976284:web:ee26535583a109c8d97e19",
+            measurementId: "G-0M0D61KS3S"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
         function ExpenseTracker() {
-            const [items, setItems] = React.useState(() => {
-                const savedItems = localStorage.getItem('transactions');
-                return savedItems ? JSON.parse(savedItems) : [];
-            });
+            const [items, setItems] = React.useState([]);
+            const [isEditMode, setIsEditMode] = React.useState(false);
             const [description, setDescription] = React.useState('');
             const [amount, setAmount] = React.useState('');
             const [type, setType] = React.useState('expense');
-            const [editingItem, setEditingItem] = React.useState(null);
+            const [loading, setLoading] = React.useState(true);
             const [selectedMonth, setSelectedMonth] = React.useState(() => {
                 const today = new Date();
                 return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
             });
 
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                try {
+                    await db.ref('transactions').push({
+                        description,
+                        amount: parseFloat(amount),
+                        type,
+                        date: new Date().toISOString()
+                    });
+                    setDescription('');
+                    setAmount('');
+                } catch (error) {
+                    alert('เกิดข้อผิดพลาด: ' + error.message);
+                }
+            };
+
             React.useEffect(() => {
-                localStorage.setItem('transactions', JSON.stringify(items));
-            }, [items]);
+                const transactionsRef = db.ref('transactions');
+                transactionsRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    const loadedItems = [];
+                    for (const key in data) {
+                        loadedItems.push({
+                            id: key,
+                            ...data[key]
+                        });
+                    }
+                    setItems(loadedItems);
+                    setLoading(false);
+                });
+
+                return () => transactionsRef.off();
+            }, []);
 
             const groupByMonth = () => {
                 const grouped = {};
@@ -59,54 +106,29 @@
                 };
             };
 
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                if (editingItem) {
-                    setItems(prevItems =>
-                        prevItems.map(item =>
-                            item.id === editingItem.id
-                                ? {
-                                    ...item,
-                                    description,
-                                    amount: parseFloat(amount),
-                                    type
-                                }
-                                : item
-                        )
-                    );
-                    setEditingItem(null);
-                } else {
-                    const newItem = {
-                        id: Date.now().toString(),
-                        description,
-                        amount: parseFloat(amount),
-                        type,
-                        date: new Date().toISOString()
-                    };
-                    setItems(prevItems => [...prevItems, newItem]);
-                }
-                setDescription('');
-                setAmount('');
-            };
-
-            const handleDelete = (id) => {
-                setItems(prevItems => prevItems.filter(item => item.id !== id));
-            };
-
-            const handleEdit = (item) => {
-                setEditingItem(item);
-                setDescription(item.description);
-                setAmount(item.amount.toString());
-                setType(item.type);
-            };
-
             const groupedItems = groupByMonth();
             const monthlyTotals = calculateMonthlyTotals(groupedItems[selectedMonth]);
 
+            if (loading) {
+                return <div className="text-center p-4">กำลังโหลดข้อมูล...</div>;
+            }
+
             return (
                 <div className="container mx-auto p-4">
-                    <h1 className="text-2xl font-bold mb-4 text-center">ระบบบันทึกรายรับรายจ่าย"ของม่อนเอง"</h1>
-                    
+                    <div className="flex justify-between items-center mb-4">
+                        <h1 className="text-2xl font-bold">ระบบบันทึกรายรับรายจ่าย"ของม่อนเอง"</h1>
+                        <button
+                            onClick={() => setIsEditMode(!isEditMode)}
+                            className={`px-4 py-2 rounded-lg ${
+                                isEditMode 
+                                ? 'bg-gray-500 hover:bg-gray-600' 
+                                : 'bg-blue-500 hover:bg-blue-600'
+                            } text-white`}
+                        >
+                            {isEditMode ? 'กลับสู่โหมดดูข้อมูล' : 'เข้าสู่โหมดแก้ไข'}
+                        </button>
+                    </div>
+
                     <div className="mb-4">
                         <select 
                             value={selectedMonth}
@@ -133,54 +155,40 @@
                         <p className="font-bold">คงเหลือเดือนนี้: {(monthlyTotals.income - monthlyTotals.expense).toFixed(2)} บาท</p>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="mb-4 bg-white p-4 rounded-lg shadow">
-                        <h2 className="text-lg font-semibold mb-2">
-                            {editingItem ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
-                        </h2>
-                        <div className="flex flex-wrap gap-2">
-                            <select 
-                                value={type} 
-                                onChange={(e) => setType(e.target.value)}
-                                className="p-2 border rounded"
-                            >
-                                <option value="expense">รายจ่าย</option>
-                                <option value="income">รายรับ</option>
-                            </select>
-                            <input
-                                type="text"
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                                placeholder="รายละเอียด"
-                                className="p-2 border rounded flex-1"
-                                required
-                            />
-                            <input
-                                type="number"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                placeholder="จำนวนเงิน"
-                                className="p-2 border rounded w-32"
-                                required
-                            />
-                            <button type="submit" className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
-                                {editingItem ? 'บันทึกการแก้ไข' : 'เพิ่มรายการ'}
-                            </button>
-                            {editingItem && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setEditingItem(null);
-                                        setDescription('');
-                                        setAmount('');
-                                        setType('expense');
-                                    }}
-                                    className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+                    {isEditMode && (
+                        <form onSubmit={handleSubmit} className="mb-4 bg-white p-4 rounded-lg shadow">
+                            <h2 className="text-lg font-semibold mb-2">เพิ่มรายการใหม่</h2>
+                            <div className="flex flex-wrap gap-2">
+                                <select 
+                                    value={type} 
+                                    onChange={(e) => setType(e.target.value)}
+                                    className="p-2 border rounded"
                                 >
-                                    ยกเลิกการแก้ไข
+                                    <option value="expense">รายจ่าย</option>
+                                    <option value="income">รายรับ</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    placeholder="รายละเอียด"
+                                    className="p-2 border rounded flex-1"
+                                    required
+                                />
+                                <input
+                                    type="number"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    placeholder="จำนวนเงิน"
+                                    className="p-2 border rounded w-32"
+                                    required
+                                />
+                                <button type="submit" className="bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                                    เพิ่มรายการ
                                 </button>
-                            )}
-                        </div>
-                    </form>
+                            </div>
+                        </form>
+                    )}
 
                     <div className="bg-white rounded-lg shadow overflow-hidden">
                         <table className="w-full border-collapse">
@@ -190,7 +198,6 @@
                                     <th className="border p-2">ประเภท</th>
                                     <th className="border p-2">รายละเอียด</th>
                                     <th className="border p-2">จำนวนเงิน</th>
-                                    <th className="border p-2">การจัดการ</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -201,22 +208,6 @@
                                         <td className="border p-2">{item.description}</td>
                                         <td className={`border p-2 ${item.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                                             {item.amount.toFixed(2)}
-                                        </td>
-                                        <td className="border p-2">
-                                            <div className="flex gap-1">
-                                                <button 
-                                                    onClick={() => handleEdit(item)}
-                                                    className="bg-yellow-500 text-white p-1 rounded hover:bg-yellow-600"
-                                                >
-                                                    แก้ไข
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="bg-red-500 text-white p-1 rounded hover:bg-red-600"
-                                                >
-                                                    ลบ
-                                                </button>
-                                            </div>
                                         </td>
                                     </tr>
                                 ))}
