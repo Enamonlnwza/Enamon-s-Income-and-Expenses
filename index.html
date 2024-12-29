@@ -46,21 +46,48 @@
                 const today = new Date();
                 return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
             });
+            const [editingItem, setEditingItem] = React.useState(null);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 try {
-                    await db.ref('transactions').push({
-                        description,
-                        amount: parseFloat(amount),
-                        type,
-                        date: new Date().toISOString()
-                    });
+                    if (editingItem) {
+                        await db.ref(`transactions/${editingItem.id}`).update({
+                            description,
+                            amount: parseFloat(amount),
+                            type
+                        });
+                        setEditingItem(null);
+                    } else {
+                        await db.ref('transactions').push({
+                            description,
+                            amount: parseFloat(amount),
+                            type,
+                            date: new Date().toISOString()
+                        });
+                    }
                     setDescription('');
                     setAmount('');
                 } catch (error) {
                     alert('เกิดข้อผิดพลาด: ' + error.message);
                 }
+            };
+
+            const handleDelete = async (id) => {
+                if (window.confirm('คุณแน่ใจหรือไม่ที่จะลบรายการนี้?')) {
+                    try {
+                        await db.ref(`transactions/${id}`).remove();
+                    } catch (error) {
+                        alert('เกิดข้อผิดพลาด: ' + error.message);
+                    }
+                }
+            };
+
+            const handleEdit = (item) => {
+                setEditingItem(item);
+                setDescription(item.description);
+                setAmount(item.amount.toString());
+                setType(item.type);
             };
 
             React.useEffect(() => {
@@ -198,6 +225,7 @@
                                     <th className="border p-2">ประเภท</th>
                                     <th className="border p-2">รายละเอียด</th>
                                     <th className="border p-2">จำนวนเงิน</th>
+                                    {isEditMode && <th className="border p-2">การจัดการ</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -209,6 +237,24 @@
                                         <td className={`border p-2 ${item.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                                             {item.amount.toFixed(2)}
                                         </td>
+                                        {isEditMode && (
+                                            <td className="border p-2">
+                                                <div className="flex gap-1">
+                                                    <button 
+                                                        onClick={() => handleEdit(item)}
+                                                        className="bg-yellow-500 text-white p-1 rounded hover:bg-yellow-600"
+                                                    >
+                                                        แก้ไข
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDelete(item.id)}
+                                                        className="bg-red-500 text-white p-1 rounded hover:bg-red-600"
+                                                    >
+                                                        ลบ
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
